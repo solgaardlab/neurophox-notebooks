@@ -11,17 +11,8 @@ from tensorflow.keras.optimizers import Adam
 from neurophox.tensorflow import RM
 from neurophox.ml.nonlinearities import cnormsq
 
-import matplotlib.pyplot as plt
-import numpy as np
-import matplotlib as mpl
-mpl.rcParams['text.usetex'] = True 
-mpl.rcParams['text.latex.preamble'] = [r'\usepackage{siunitx}', r'\usepackage{amsmath}'] + [r'\usepackage{sansmathfonts}',r'\usepackage[T1]{fontenc}', r'\renewcommand*\familydefault{\sfdefault}']
-# mpl.rcParams['font.family'] = 'sans-serif'
-# mpl.rcParams['font.sans-serif'] = 'cm'
-
-
 import seaborn as sns
-
+from collections import namedtuple
 
 class EOIntensityModulation(tf.keras.layers.Layer):
     def __init__(self,
@@ -96,7 +87,7 @@ def construct_onn_linear_tf(N, N_classes=10, L=1, theta_init_name='haar_rect', p
     
 def construct_onn_EO_tf(N,
                         N_classes=10,
-                        L=1,
+                        L=2,
                         train_alpha=False,
                         train_g=False,
                         train_phi_b=False,
@@ -104,8 +95,8 @@ def construct_onn_EO_tf(N,
                         theta_init_name='haar_rect',
                         phi_init_name='random_phi',
                         alpha=0.1,
-                        g=0.1*np.pi,
-                        phi_b=0*np.pi):
+                        g=0.05*np.pi,
+                        phi_b=1*np.pi):
     '''
     Constructs an L layer EO ONN model with the specified alpha, g, and phi_b
     
@@ -186,7 +177,7 @@ def norm_inputs(inputs, feature_axis=1):
         inputs[i, :] /= l1_norm
     return inputs
 
-def plot_confusion_matrix(cm, ax=None, figsize=(4,4), fs=12, title=None, norm_axis=1, normalize=True):
+def plot_confusion_matrix(cm, ax=None, figsize=(4, 4), fs=12, title=None, norm_axis=1, normalize=True):
     
     if normalize:
         cm = cm.astype('float') / cm.sum(axis=norm_axis)[:, np.newaxis]
@@ -204,7 +195,7 @@ def plot_confusion_matrix(cm, ax=None, figsize=(4,4), fs=12, title=None, norm_ax
                 annot=False,
                 cmap=pal1,
                 linewidths=1,
-                cbar=False,
+                cbar=True,
                 mask=mask1,
                 ax=ax,
                 linecolor="#ffffff")
@@ -213,7 +204,7 @@ def plot_confusion_matrix(cm, ax=None, figsize=(4,4), fs=12, title=None, norm_ax
                 annot=False,
                 cmap=pal2,
                 linewidths=1,
-                cbar=False,
+                cbar=True,
                 mask=mask2,
                 ax=ax,
                 linecolor="#ffffff")
@@ -222,5 +213,26 @@ def plot_confusion_matrix(cm, ax=None, figsize=(4,4), fs=12, title=None, norm_ax
     ax.set_xlabel('Predicted label')
     if title is not None:
         ax.set_title(title, fontsize=fs)
-    
-#     return fig
+
+ONNData = namedtuple('ONNData', ['x_train', 'y_train', 'x_test', 'y_test', 'units', 'num_classes'])
+
+class MNISTDataProcessor:
+    def __init__(self):
+        (self.x_train_raw, self.y_train), (self.x_test_raw, self.y_test) = mnist.load_data()
+        self.num_train = self.x_train_raw.shape[0]
+        self.num_test = self.x_test_raw.shape[0]
+        self.x_train_ft = np.fft.fftshift(np.fft.fft2(self.x_train_raw), axes=(1, 2))
+        self.x_test_ft = np.fft.fftshift(np.fft.fft2(self.x_test_raw), axes=(1, 2))
+        
+    def fourier(self, freq_radius):
+        min_r, max_r = 14 - freq_radius, 14 + freq_radius
+        x_train_ft = self.x_train_ft[:, min_r:max_r, min_r:max_r]
+        x_test_ft = self.x_test_ft[:, min_r:max_r, min_r:max_r]
+        return ONNData(
+            x_train=norm_inputs(x_train_ft.reshape((self.num_train, -1))).astype(np.complex64),
+            y_train=np.eye(10)[self.y_train],
+            x_test=norm_inputs(x_test_ft.reshape((self.num_test, -1))).astype(np.complex64),
+            y_test=np.eye(10)[self.y_test],
+            units=freq_radius**2,
+            num_classes=10
+        )

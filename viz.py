@@ -5,6 +5,16 @@ import matplotlib.animation as manimation
 from scipy.signal import savgol_filter
 from neurophox.helpers import to_absolute_theta
 
+DARK_RED = (0.7, 0, 0)
+LIGHT_RED = (0.85, 0.5, 0.5)
+DARK_ORANGE = (0.7, 0.35, 0)
+DARK_BLUE = (0, 0.2, 0.6)
+LIGHT_BLUE = (0.5, 0.6, 0.8)
+DARK_GREEN = (0, 0.4, 0)
+GRAY = (0.5, 0.5, 0.5)
+DARK_PURPLE = (0.4, 0, 0.6)
+LIGHT_PURPLE = (0.7, 0.5, 0.8)
+
 class MOResultsVisualizer:
     def __init__(self, model_name: str, model_results: Dict, label_fontsize: int=7, title_fontsize: int=8):
         self.model_name = model_name
