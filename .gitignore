@@ -1,4 +1,5 @@
 data/*
+__pycache__/*
 data/movies/*
 data/figures/*
 data/results/*
