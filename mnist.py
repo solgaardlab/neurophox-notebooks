@@ -1,11 +1,11 @@
 import numpy as np
-import scipy
+import scipy as sp
 
 import tensorflow as tf
 from tensorflow.keras.models import Sequential
 from tensorflow.keras.layers import Activation, Lambda
 from tensorflow.python.keras import backend as K
-from tensorflow.keras.datasets import mnist
+from tensorflow.keras.datasets import mnist, fashion_mnist
 from tensorflow.keras.optimizers import Adam
 
 from neurophox.tensorflow import RM
@@ -146,6 +146,68 @@ def construct_onn_EO_tf(N,
     
     return tf.keras.models.Sequential(layers)
 
+def construct_onn_EO_tf_ortho(N,
+                        N_classes=10,
+                        L=2,
+                        train_alpha=False,
+                        train_g=False,
+                        train_phi_b=False,
+                        single_param_per_layer=True,
+                        theta_init_name='haar_rect',
+                        phi_init_name='random_phi',
+                        alpha=0.1,
+                        g=0.05*np.pi,
+                        phi_b=1*np.pi):
+    '''
+    Constructs an L layer EO ONN model with the specified alpha, g, and phi_b
+    
+    The parameters alpha, g, and phi_b can be scalars or vectors. If scalar-valued, the value is used
+    for all L layers. If vector-valued, the length must be equal to L and each vector element is used 
+    for the corresponding layer.
+    '''
+    alpha = np.asarray(alpha)
+    g     = np.asarray(g)
+    phi_b = np.asarray(phi_b)
+    
+    if alpha.size == 1:
+        alpha = np.tile(alpha, L)
+    else:
+        assert alpha.size == L, 'alpha has a size which is inconsistent with L'
+    
+    if g.size == 1:
+        g = np.tile(g, L)
+    else:
+        assert g.size == L, 'g has a size which is inconsistent with L'
+    
+    if phi_b.size == 1:
+        phi_b = np.tile(phi_b, L)
+    else:
+        assert phi_b.size == L, 'phi_b has a size which is inconsistent with L'
+    
+    layers=[]
+    for i in range(L):
+        layers.append(RM(N, theta_init_name=theta_init_name, phi_init_name=phi_init_name))
+        layers.append(EOIntensityModulation(N,
+                                            alpha[i],
+                                            g[i],
+                                            phi_b[i],
+                                            train_alpha=train_alpha,
+                                            train_g=train_g,
+                                            train_phi_b=train_phi_b,
+                                            single_param_per_layer=single_param_per_layer))
+    
+#     layers.append(Activation(cnormsq))
+#     keep = N // N_classes
+    
+#     layers.append(Lambda(lambda x: tf.math.real(tf.reduce_sum(
+#         tf.reshape(x[:, :keep * N_classes], shape=(-1, N_classes, keep)), -1))))
+
+    layers.append(Activation(cnormsq))
+    layers.append(Lambda(lambda x: tf.math.real(x[:, :N_classes])))
+    layers.append(Lambda(lambda x: tf.math.l2_normalize(x, axis=-1)))
+    
+    return tf.keras.models.Sequential(layers)
+
 
 def calc_confusion_matrix_tf(model, x_test_norm, y_test_onehot):
     y_truth = y_test_onehot.argmax(axis=-1)
@@ -214,11 +276,11 @@ def plot_confusion_matrix(cm, ax=None, figsize=(4, 4), fs=12, title=None, norm_a
     if title is not None:
         ax.set_title(title, fontsize=fs)
 
-ONNData = namedtuple('ONNData', ['x_train', 'y_train', 'x_test', 'y_test', 'units', 'num_classes'])
+ONNData = namedtuple('ONNData', ['x_train', 'y_train', 'y_train_ind', 'x_test', 'y_test', 'y_test_ind', 'units', 'num_classes'])
 
 class MNISTDataProcessor:
-    def __init__(self):
-        (self.x_train_raw, self.y_train), (self.x_test_raw, self.y_test) = mnist.load_data()
+    def __init__(self, fashion: bool=False):
+        (self.x_train_raw, self.y_train), (self.x_test_raw, self.y_test) = fashion_mnist.load_data() if fashion else mnist.load_data()
         self.num_train = self.x_train_raw.shape[0]
         self.num_test = self.x_test_raw.shape[0]
         self.x_train_ft = np.fft.fftshift(np.fft.fft2(self.x_train_raw), axes=(1, 2))
@@ -231,8 +293,24 @@ class MNISTDataProcessor:
         return ONNData(
             x_train=norm_inputs(x_train_ft.reshape((self.num_train, -1))).astype(np.complex64),
             y_train=np.eye(10)[self.y_train],
+            y_train_ind=self.y_train,
             x_test=norm_inputs(x_test_ft.reshape((self.num_test, -1))).astype(np.complex64),
             y_test=np.eye(10)[self.y_test],
-            units=freq_radius**2,
+            y_test_ind=self.y_test,
+            units=(2 * freq_radius)**2,
+            num_classes=10
+        )
+    
+    def resample(self, p, b=0):
+        m = 28 - b * 2
+        min_r, max_r = b, 28 - b
+        x_train_ft = sp.ndimage.zoom(self.x_train_raw[:, min_r:max_r, min_r:max_r], (1, p / m, p / m))
+        x_test_ft = sp.ndimage.zoom(self.x_test_raw[:, min_r:max_r, min_r:max_r], (1, p / m, p / m))
+        return ONNData(
+            x_train=norm_inputs(x_train_ft.reshape((self.num_train, -1)).astype(np.complex64)),
+            y_train=np.eye(10)[self.y_train],
+            x_test=norm_inputs(x_test_ft.reshape((self.num_test, -1)).astype(np.complex64)),
+            y_test=np.eye(10)[self.y_test],
+            units=p ** 2,
             num_classes=10
         )
